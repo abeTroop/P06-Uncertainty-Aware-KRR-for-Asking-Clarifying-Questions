@@ -10,6 +10,6 @@ client = genai.Client()
 
 def llm_response(prompt):
     response = client.models.generate_content(
-        model="gemini-3-flash-preview", contents=prompt
+        model="gemini-2.5-flash-lite", contents=prompt
     )
     return response.text

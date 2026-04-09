@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+
 import 'green_theme.dart';
+import 'llm_api.dart';
 
 void main() {
   runApp(const ChatApp());
 }
 
 class ChatApp extends StatelessWidget {
-  const ChatApp({super.key});
+  const ChatApp({super.key, this.api = const _DefaultLlmApi()});
+
+  final LlmApi api;
 
   @override
   Widget build(BuildContext context) {
@@ -15,13 +19,15 @@ class ChatApp extends StatelessWidget {
       title: 'AI Chatbot',
       theme: GreenTheme().greenTheme,
       darkTheme: GreenTheme().darkGreenTheme,
-      home: const ChatScreen(),
+      home: ChatScreen(api: api),
     );
   }
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, required this.api});
+
+  final LlmApi api;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -31,30 +37,48 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, String>> messages = [];
   final TextEditingController controller = TextEditingController();
   final ScrollController scrollController = ScrollController();
+  bool isLoading = false;
 
-  void sendMessage() {
-    if (controller.text.trim().isEmpty) return;
+  Future<void> sendMessage() async {
+    final userMessage = controller.text.trim();
+    if (userMessage.isEmpty || isLoading) return;
 
     setState(() {
-      messages.add({"role": "user", "text": controller.text});
+      messages.add({'role': 'user', 'text': userMessage});
+      isLoading = true;
     });
 
-    String userMessage = controller.text;
     controller.clear();
+    scrollToBottom();
 
-    // Simulated AI response (replace with API call)
-    Future.delayed(const Duration(milliseconds: 500), () {
+    try {
+      final response = await widget.api.sendPrompt(userMessage);
+      if (!mounted) return;
+
       setState(() {
-        messages.add({"role": "bot", "text": "Echo: $userMessage"});
+        messages.add({'role': 'bot', 'text': response});
+        isLoading = false;
       });
-      scrollToBottom();
-    });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        messages.add({
+          'role': 'bot',
+          'text':
+              "An error occurred while connecting to the backend FastAPI server.",
+        });
+        isLoading = false;
+      });
+    }
 
     scrollToBottom();
   }
 
   void scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
+      if (!scrollController.hasClients) return;
+
       scrollController.animateTo(
         scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -64,7 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget buildMessage(Map<String, String> message) {
-    bool isUser = message['role'] == 'user';
+    final isUser = message['role'] == 'user';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -90,20 +114,40 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              controller: scrollController,
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                return buildMessage(messages[index]);
-              },
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      return buildMessage(messages[index]);
+                    },
+                  ),
+                ),
+                if (isLoading)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 10),
+                        Text('Thinking...'),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
-          //const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              //color: Colors.white,
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: Colors.grey, width: 0.5),
@@ -114,6 +158,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   Expanded(
                     child: TextField(
                       controller: controller,
+                      enabled: !isLoading,
                       decoration: const InputDecoration(
                         hintText: 'Type a message...',
                         border: InputBorder.none,
@@ -122,16 +167,31 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.send),
-                    onPressed: sendMessage,
+                    icon: isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send),
+                    onPressed: isLoading ? null : sendMessage,
                   ),
                 ],
               ),
             ),
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
         ],
       ),
     );
+  }
+}
+
+class _DefaultLlmApi implements LlmApi {
+  const _DefaultLlmApi();
+
+  @override
+  Future<String> sendPrompt(String prompt) {
+    return HttpLlmApi().sendPrompt(prompt);
   }
 }
