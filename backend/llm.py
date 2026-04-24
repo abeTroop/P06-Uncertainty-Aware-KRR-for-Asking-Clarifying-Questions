@@ -1,15 +1,14 @@
-from google import genai
-import os
+import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# The default API key is read from the environment variable: GEMINI_API_KEY
-# To change the API key, pass it as a parameter directly with os.getenv("YOUR_ENV_VAR)")
-client = genai.Client()
+client = anthropic.Anthropic()
 
-def llm_response(prompt):
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite", contents=prompt
+def llm_response(prompt: str) -> str:
+    response = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=16000,
+        messages=[{"role": "user", "content": prompt}],
     )
-    return response.text
+    return response.content[0].text

@@ -16,7 +16,7 @@ class HttpLlmApi implements LlmApi {
 
   @override
   Future<String> sendPrompt(String prompt) async {
-    final response = await _client.put(
+    final response = await _client.post(
       Uri.parse('$_baseUrl/llm'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'prompt': prompt}),
