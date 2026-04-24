@@ -4,13 +4,13 @@ import 'green_theme.dart';
 import 'llm_api.dart';
 
 void main() {
-  runApp(const ChatApp());
+  runApp(ChatApp(api: QaApi()));
 }
 
 class ChatApp extends StatelessWidget {
-  const ChatApp({super.key, this.api = const _DefaultLlmApi()});
+  const ChatApp({super.key, required this.api});
 
-  final LlmApi api;
+  final QaApi api;
 
   @override
   Widget build(BuildContext context) {
@@ -27,46 +27,74 @@ class ChatApp extends StatelessWidget {
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.api});
 
-  final LlmApi api;
+  final QaApi api;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final List<Map<String, String>> messages = [];
+  // Each message: role, text, and optional metadata (type, score, confidence)
+  final List<Map<String, dynamic>> messages = [];
   final TextEditingController controller = TextEditingController();
   final ScrollController scrollController = ScrollController();
   bool isLoading = false;
 
+  // Set when the bot asked a clarifying question — next user message goes to /clarify
+  String? _pendingSessionId;
+
   Future<void> sendMessage() async {
-    final userMessage = controller.text.trim();
-    if (userMessage.isEmpty || isLoading) return;
+    final userText = controller.text.trim();
+    if (userText.isEmpty || isLoading) return;
 
     setState(() {
-      messages.add({'role': 'user', 'text': userMessage});
+      messages.add({'role': 'user', 'text': userText});
       isLoading = true;
     });
-
     controller.clear();
     scrollToBottom();
 
     try {
-      final response = await widget.api.sendPrompt(userMessage);
-      if (!mounted) return;
-
-      setState(() {
-        messages.add({'role': 'bot', 'text': response});
-        isLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-
+      if (_pendingSessionId != null) {
+        final result = await widget.api.clarify(_pendingSessionId!, userText);
+        setState(() {
+          _pendingSessionId = null;
+          messages.add({
+            'role': 'bot',
+            'text': result.finalAnswer,
+            'type': 'final',
+            'confidence': result.confidence,
+          });
+          isLoading = false;
+        });
+      } else {
+        final result = await widget.api.ask(userText);
+        setState(() {
+          if (result.decision == 'answer') {
+            messages.add({
+              'role': 'bot',
+              'text': result.answer ?? '',
+              'type': 'answer',
+              'score': result.uncertaintyScore,
+            });
+          } else {
+            _pendingSessionId = result.sessionId;
+            messages.add({
+              'role': 'bot',
+              'text': result.clarifyingQuestion ?? '',
+              'type': 'clarifying',
+              'score': result.uncertaintyScore,
+            });
+          }
+          isLoading = false;
+        });
+      }
+    } catch (e) {
       setState(() {
         messages.add({
           'role': 'bot',
-          'text':
-              "An error occurred while connecting to the backend FastAPI server.",
+          'text': 'Error connecting to backend: $e',
+          'type': 'error',
         });
         isLoading = false;
       });
@@ -78,7 +106,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
       if (!scrollController.hasClients) return;
-
       scrollController.animateTo(
         scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -87,22 +114,52 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Widget buildMessage(Map<String, String> message) {
-    final isUser = message['role'] == 'user';
+  Widget buildMessage(Map<String, dynamic> msg) {
+    final isUser = msg['role'] == 'user';
+    final type = msg['type'] as String?;
+    final score = msg['score'] as double?;
+    final confidence = msg['confidence'] as double?;
+
+    String? badge;
+    if (type == 'clarifying' && score != null) {
+      badge = 'Needs clarification  •  uncertainty ${score.toStringAsFixed(2)}';
+    } else if (type == 'answer' && score != null) {
+      badge = 'Direct answer  •  uncertainty ${score.toStringAsFixed(2)}';
+    } else if (type == 'final' && confidence != null) {
+      badge = 'Final answer  •  confidence ${confidence.toStringAsFixed(2)}';
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 250),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isUser
-              ? Theme.of(context).colorScheme.primaryContainer
-              : Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(message['text'] ?? ''),
+      child: Column(
+        crossAxisAlignment:
+            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isUser
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(msg['text'] as String? ?? ''),
+          ),
+          if (badge != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+              child: Text(
+                badge,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: type == 'clarifying'
+                      ? Colors.orange.shade700
+                      : Colors.green.shade700,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -110,7 +167,29 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AI Chatbot')),
+      appBar: AppBar(
+        title: const Text('AI Chatbot'),
+        bottom: _pendingSessionId != null
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(24),
+                child: Container(
+                  color: Colors.orange.shade100,
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    'Awaiting your clarification…',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade900,
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
       body: Column(
         children: [
           Expanded(
@@ -120,9 +199,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: ListView.builder(
                     controller: scrollController,
                     itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      return buildMessage(messages[index]);
-                    },
+                    itemBuilder: (context, index) =>
+                        buildMessage(messages[index]),
                   ),
                 ),
                 if (isLoading)
@@ -159,8 +237,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: TextField(
                       controller: controller,
                       enabled: !isLoading,
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message...',
+                      decoration: InputDecoration(
+                        hintText: _pendingSessionId != null
+                            ? 'Answer the clarifying question…'
+                            : 'Type a message...',
                         border: InputBorder.none,
                       ),
                       onSubmitted: (_) => sendMessage(),
@@ -184,14 +264,5 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
-  }
-}
-
-class _DefaultLlmApi implements LlmApi {
-  const _DefaultLlmApi();
-
-  @override
-  Future<String> sendPrompt(String prompt) {
-    return HttpLlmApi().sendPrompt(prompt);
   }
 }
