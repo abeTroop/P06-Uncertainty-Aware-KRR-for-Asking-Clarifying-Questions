@@ -2,9 +2,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from llm import llm_response
-from orchestrator import process_question, process_clarification
-from storage import get_logs
+from backend.llm import llm_response
+from backend.orchestrator import process_question, process_clarification
+from backend.storage import get_logs
 
 app = FastAPI(
     title="Uncertainty-Aware QA Backend",

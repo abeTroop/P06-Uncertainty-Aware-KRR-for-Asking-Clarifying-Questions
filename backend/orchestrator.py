@@ -2,9 +2,9 @@ import json
 
 from fastapi import HTTPException
 
-from llm import llm_response
-from prompts import master_prompt, clarification_prompt
-from storage import create_session, get_session, update_session
+from backend.llm import llm_response
+from backend.prompts import master_prompt, clarification_prompt
+from backend.storage import create_session, get_session, update_session
 
 
 def _parse_json(text: str) -> dict:
