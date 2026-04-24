@@ -23,24 +23,41 @@ A backend system that estimates uncertainty in user questions and decides whethe
 ├── storage.py       # In-memory session and log store
 └── requirements.txt
 ```
+##### ##### ##### |
+##### Setup ##### |
+##### ##### ##### v
 
-## Setup
+Open in or cd to P06-UNCERTAINTY-AWARE...
+Most files will need to be ran in this
+project folder unless stated otherwise
 
 ```bash
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
 Create a `.env` file with your Gemini API key:
+Put this file in P06-UNCERTAINTY-AWARE... project folder
 
 ```
 GEMINI_API_KEY=your_key_here
 ```
 
-Run the server:
-
+Run the server in terminal 1:
 ```bash
-uvicorn main:app --reload
+uvicorn backend.main:app --reload
 ```
+
+Create a second terminal
+Run UI in Terminal 2:
+```bash
+cd P06../frontend 
+flutter pub get
+flutter run -d chrome
+```
+
+##### ##### ##### ^
+##### Setup ##### |
+##### ##### ##### |
 
 API docs available at `http://localhost:8000/docs`.
 
