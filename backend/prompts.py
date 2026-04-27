@@ -1,7 +1,20 @@
-def master_prompt(question: str) -> str:
+def master_prompt(question: str, kb_assessment: dict | None = None) -> str:
+    kb_context = ""
+    if kb_assessment:
+        missing = kb_assessment.get("missing_slots", [])
+        missing_str = ", ".join(missing) if missing else "none"
+        kb_context = f"""
+Knowledge Base Pre-Assessment (use this to inform your uncertainty score):
+- Detected question type: {kb_assessment["question_type"]} ({kb_assessment["taxonomy_description"]})
+- Required slots for this type: {", ".join(kb_assessment["required_slots"])}
+- Detected entities: {", ".join(kb_assessment["detected_entities"]) or "none"}
+- Missing slots: {missing_str}
+- KB uncertainty contribution: {kb_assessment["kb_uncertainty_score"]}
+"""
     return f"""You are an uncertainty-aware AI assistant.
 Your job is NOT to immediately answer every question.
 Your goal is to determine whether you have enough information to answer confidently.
+{kb_context}
 You must follow this process:
 Step 1: Understand the user's question.
 Step 2: Evaluate uncertainty based on:

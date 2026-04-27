@@ -2,6 +2,7 @@ import json
 
 from fastapi import HTTPException
 
+from backend.knowledge_base import assess_question
 from backend.llm import llm_response
 from backend.prompts import master_prompt, clarification_prompt
 from backend.storage import create_session, get_session, update_session
@@ -29,7 +30,8 @@ def process_question(question: str) -> dict:
     Uncertainty estimation + decision policy in one LLM call.
     Returns session_id and either an answer or a clarifying question.
     """
-    result = _call_llm(master_prompt(question))
+    kb_assessment = assess_question(question)
+    result = _call_llm(master_prompt(question, kb_assessment))
 
     decision = result.get("decision", "clarify")
     if decision not in ("answer", "clarify"):
@@ -39,6 +41,7 @@ def process_question(question: str) -> dict:
 
     session_data = {
         "question": question,
+        "kb_assessment": kb_assessment,
         "uncertainty_score": uncertainty_score,
         "decision": decision,
         "reason": result.get("reason"),
